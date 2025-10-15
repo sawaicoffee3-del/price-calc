@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>実質価格 計算ツール</title>
+  <style>
+    :root { --bg:#f7f7f8; --card:#ffffff; --text:#111; --muted:#666; --accent:#0a7; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif; color:var(--text); background:var(--bg); }
+    header { padding:20px 16px 0; text-align:center; }
+    h1 { margin:0 0 8px; font-size:20px; }
+    p.desc { margin:0 0 16px; color:var(--muted); font-size:14px; }
+    .container { max-width:720px; margin:16px auto 40px; padding:0 12px; }
+    .card { background:var(--card); border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,0.06); padding:16px; }
+    .grid { display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width:720px){ .grid.two { grid-template-columns:1fr 1fr; } }
+    label { display:block; font-size:13px; color:var(--muted); margin:0 0 6px; }
+    input[type="number"], select {
+      width:100%; padding:12px 14px; border:1px solid #ddd; border-radius:12px; font-size:16px;
+      background:#fff; outline:none; transition:border .15s ease;
+    }
+    input[type="number"]:focus, select:focus { border-color:var(--accent); }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .result { margin-top:16px; padding:14px; background:#fafafa; border:1px dashed #e3e3e3; border-radius:12px; }
+    .result h2 { margin:0 0 10px; font-size:16px; }
+    .kv { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px dotted #eee; }
+    .kv:last-child { border-bottom:none; }
+    .k { color:#555; font-size:14px; }
+    .v { font-weight:700; font-size:16px; }
+    footer { text-align:center; color:#888; font-size:12px; padding:18px 12px 28px; }
+    .note { font-size:12px; color:#777; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>実質価格 計算ツール</h1>
+    <p class="desc">価格 → クーポン → 消費税 → ポイント（基準と丸め選択）で「実質いくら？」を自動計算</p>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <div class="grid two">
+        <div>
+          <label>商品価格（円・税抜）</label>
+          <input id="price" type="number" inputmode="decimal" placeholder="例: 1200" value="1200" min="0" step="1">
+        </div>
+        <div>
+          <label>クーポン額（円）</label>
+          <input id="coupon" type="number" inputmode="decimal" placeholder="例: 200" value="200" min="0" step="1">
+        </div>
+
+        <div>
+          <label>消費税（%）</label>
+          <input id="taxPct" type="number" inputmode="decimal" placeholder="例: 10" value="10" min="0" step="0.1">
+        </div>
+        <div>
+          <label>ポイント還元（%）</label>
+          <input id="pointPct" type="number" inputmode="decimal" placeholder="例: 10" value="10" min="0" step="0.1">
+        </div>
+
+        <div>
+          <label>ポイント基準</label>
+          <select id="pointBase">
+            <option value="tax_in" selected>税込に対して付与</option>
+            <option value="tax_ex">税抜に対して付与</option>
+          </select>
+        </div>
+        <div>
+          <label>丸め方法（ポイント額）</label>
+          <select id="roundMode">
+            <option value="round" selected>四捨五入</option>
+            <option value="floor">切り捨て</option>
+            <option value="ceil">切り上げ</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="result" id="resultBox" aria-live="polite">
+        <h2>計算結果</h2>
+        <div class="kv"><div class="k">元の価格</div><div class="v" id="v_price">-</div></div>
+        <div class="kv"><div class="k">クーポン</div><div class="v" id="v_coupon">-</div></div>
+        <div class="kv"><div class="k">クーポン後（税抜）</div><div class="v" id="v_afterCoupon">-</div></div>
+        <div class="kv"><div class="k">税込価格</div><div class="v" id="v_afterTax">-</div></div>
+        <div class="kv"><div class="k">ポイント基準</div><div class="v" id="v_baseTxt">-</div></div>
+        <div class="kv"><div class="k">ポイント還元額</div><div class="v" id="v_points">-</div></div>
+        <div class="kv"><div class="k">実質支払額</div><div class="v" id="v_real">-</div></div>
+        <div class="note">※ ポイントは「基準金額 × 還元率」に丸め方法を適用。金額表示は四捨五入（標準）</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>© 実質価格 計算ツール</footer>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const price     = el('price');
+    const coupon    = el('coupon');
+    const taxPct    = el('taxPct');
+    const pointPct  = el('pointPct');
+    const pointBase = el('pointBase');
+    const roundMode = el('roundMode');
+
+    const v_price = el('v_price');
+    const v_coupon = el('v_coupon');
+    const v_afterCoupon = el('v_afterCoupon');
+    const v_afterTax = el('v_afterTax');
+    const v_baseTxt = el('v_baseTxt');
+    const v_points = el('v_points');
+    const v_real = el('v_real');
+
+    const fyen = n => `${Number(n).toLocaleString('ja-JP')}円`;
+
+    function rmode(x, mode) {
+      if (mode === 'floor') return Math.floor(x);
+      if (mode === 'ceil')  return Math.ceil(x);
+      return Math.round(x); // round
+    }
+
+    function calc() {
+      const p  = Math.max(parseFloat(price.value || '0'), 0);
+      const c  = Math.max(parseFloat(coupon.value || '0'), 0);
+      const tp = Math.max(parseFloat(taxPct.value || '0'), 0);
+      const pp = Math.max(parseFloat(pointPct.value || '0'), 0);
+
+      // ① クーポン適用（税抜）
+      const afterCoupon = Math.max(p - c, 0);
+
+      // ② 税込み
+      const taxRate = 1 + (tp / 100);
+      const afterTax = afterCoupon * taxRate;
+
+      // ③ ポイント基準
+      const base = (pointBase.value === 'tax_in') ? afterTax : afterCoupon;
+
+      // ④ ポイント金額（丸め方法は選択）
+      const points = rmode(base * (pp / 100), roundMode.value);
+
+      // ⑤ 実質支払額（= 税込 − ポイント）
+      const real = Math.round(afterTax) - points;
+
+      // 表示
+      v_price.textContent       = fyen(p);
+      v_coupon.textContent      = fyen(c);
+      v_afterCoupon.textContent = fyen(Math.round(afterCoupon));
+      v_afterTax.textContent    = fyen(Math.round(afterTax));
+      v_baseTxt.textContent     = (pointBase.value === 'tax_in')
+                                  ? `税込に対して ${pp}%`
+                                  : `税抜に対して ${pp}%`;
+      v_points.textContent      = fyen(points);
+      v_real.textContent        = fyen(real);
+    }
+
+    // 入力イベントで即時計算
+    [price, coupon, taxPct, pointPct, pointBase, roundMode].forEach(inp => {
+      inp.addEventListener('input', calc);
+      inp.addEventListener('change', calc);
+    });
+
+    // 初期計算
+    calc();
+  </script>
+</body>
+</html>
