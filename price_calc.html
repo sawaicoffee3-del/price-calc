@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="robots" content="noindex, nofollow">
   <title>実質価格 計算ツール</title>
   <style>
     :root { --bg:#f7f7f8; --card:#ffffff; --text:#111; --muted:#666; --accent:#0a7; }
@@ -46,10 +45,17 @@
           <label>商品価格（円・税抜）</label>
           <input id="price" type="number" inputmode="decimal" placeholder="例: 1200" value="1200" min="0" step="1">
         </div>
-        <div>
-          <label>クーポン額（円）</label>
-          <input id="coupon" type="number" inputmode="decimal" placeholder="例: 200" value="200" min="0" step="1">
-        </div>
+<div>
+  <label>クーポン</label>
+  <div class="row">
+    <input id="coupon" type="number" inputmode="decimal" placeholder="例: 200（円）／20（％）" value="200" min="0" step="1">
+<select id="discountType" aria-label="割引タイプ">
+      <option value="yen" selected>円引き</option>
+      <option value="percent">％引き</option>
+    </select>
+  </div>
+</div>
+
 
         <div>
           <label>消費税（%）</label>
@@ -86,6 +92,8 @@
         <div class="kv"><div class="k">ポイント基準</div><div class="v" id="v_baseTxt">-</div></div>
         <div class="kv"><div class="k">ポイント還元額</div><div class="v" id="v_points">-</div></div>
         <div class="kv"><div class="k">実質支払額</div><div class="v" id="v_real">-</div></div>
+<div class="kv"><div class="k">実質割引率</div><div class="v" id="v_eff">-</div></div>
+
         <div class="note">※ ポイントは「基準金額 × 還元率」に丸め方法を適用。金額表示は四捨五入（標準）</div>
       </div>
     </div>
@@ -101,6 +109,7 @@
     const pointPct  = el('pointPct');
     const pointBase = el('pointBase');
     const roundMode = el('roundMode');
+const discountType = el('discountType');
 
     const v_price = el('v_price');
     const v_coupon = el('v_coupon');
@@ -109,6 +118,8 @@
     const v_baseTxt = el('v_baseTxt');
     const v_points = el('v_points');
     const v_real = el('v_real');
+const v_eff  = el('v_eff');
+
 
     const fyen = n => `${Number(n).toLocaleString('ja-JP')}円`;
 
@@ -124,8 +135,17 @@
       const tp = Math.max(parseFloat(taxPct.value || '0'), 0);
       const pp = Math.max(parseFloat(pointPct.value || '0'), 0);
 
-      // ① クーポン適用（税抜）
-      const afterCoupon = Math.max(p - c, 0);
+// ① クーポン適用（税抜）※割引タイプで分岐
+let afterCoupon;
+if (discountType.value === 'percent') {
+  // 例：20 → 20%OFF
+  const off = p * (c / 100);
+  afterCoupon = Math.max(p - off, 0);
+} else {
+  // 円引き：例 500 → 500円OFF
+  afterCoupon = Math.max(p - c, 0);
+}
+
 
       // ② 税込み
       const taxRate = 1 + (tp / 100);
@@ -139,10 +159,12 @@
 
       // ⑤ 実質支払額（= 税込 − ポイント）
       const real = Math.round(afterTax) - points;
+const eff = (p > 0) ? ((1 - real / p) * 100) : 0;
+
 
       // 表示
       v_price.textContent       = fyen(p);
-      v_coupon.textContent      = fyen(c);
+v_coupon.textContent      = (discountType.value === 'percent') ? `${c}%` : fyen(c);
       v_afterCoupon.textContent = fyen(Math.round(afterCoupon));
       v_afterTax.textContent    = fyen(Math.round(afterTax));
       v_baseTxt.textContent     = (pointBase.value === 'tax_in')
@@ -150,10 +172,12 @@
                                   : `税抜に対して ${pp}%`;
       v_points.textContent      = fyen(points);
       v_real.textContent        = fyen(real);
+v_eff.textContent = `${eff.toFixed(2)}%`;
+
     }
 
     // 入力イベントで即時計算
-    [price, coupon, taxPct, pointPct, pointBase, roundMode].forEach(inp => {
+[price, coupon, taxPct, pointPct, pointBase, roundMode, discountType].forEach(inp => {
       inp.addEventListener('input', calc);
       inp.addEventListener('change', calc);
     });
@@ -163,4 +187,3 @@
   </script>
 </body>
 </html>
-
